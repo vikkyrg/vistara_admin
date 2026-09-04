@@ -1,0 +1,6 @@
+Name,Description,Stock,SKU,Price,OfferPrice,Category,SubCategory,Brand,CashOnDelivery,Image,Attribute
+Wireless Headphones,Premium wireless headphones with noise cancellation and long battery life,75,WH001,2999,2499,Electronics,Man,AudioTech,Yes,https://example.com/headphones.jpg,"Color: Black, Battery: 30hrs, Connectivity: Bluetooth 5.0"
+Casual T-Shirt,Comfortable cotton t-shirt perfect for daily wear,100,TS002,599,499,Fashion,womens,StyleWear,Yes,https://example.com/tshirt.jpg,"Color: Blue, Size: L, Material: 100% Cotton"
+Smartphone Android,Latest android smartphone with advanced features and long battery life,12,SP003,15999,13999,Electronics,Man,TechBrand,Yes,https://example.com/phone.jpg,"Model: TechPhone X1, Color: Black, RAM: 8GB, Storage: 128GB, Battery: 5000mAh"
+Gaming Laptop Pro,High performance laptop designed for gaming and professional work,8,LP004,75999,69999,Electronics,Man,GameTech,Yes,https://example.com/laptop.jpg,"Model: GamePro X15, Graphics: Dedicated RTX 4060, RAM: 16GB, Storage: 1TB SSD, Screen: 15.6 inch"
+Smart LED TV,Ultra HD smart television with streaming capabilities and modern design,15,TV005,45999,39999,Electronics,Man,ViewMax,Yes,https://example.com/tv.jpg,"Model: ViewMax 55X, Screen Size: 55 inch, Resolution: 4K UHD, Material: Plastic, Dimension: 123x71x8 cm"
