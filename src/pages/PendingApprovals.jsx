@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import {
   RefreshCw, Trash2, Eye, Search,
-  ChevronDown, ChevronUp, Package
+  ChevronDown, ChevronUp, Package, Check, X
 } from "lucide-react";
 
-import { db } from "../firebase/config";
-import { collection, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { db } from "../../firebase";
+import { collection, getDocs, query, where, deleteDoc, doc, updateDoc } from "firebase/firestore";
 
-const SellerProductsDashboard = () => {
+const PendingApprovals = () => {
   const [products, setProducts] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,11 +22,12 @@ const SellerProductsDashboard = () => {
   const [page, setPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Load ALL products
+  // Load PENDING products
   const loadProducts = async () => {
     setLoading(true);
 
-    const snap = await getDocs(collection(db, "products"));
+    const q = query(collection(db, "products"), where("status", "==", "pending"));
+    const snap = await getDocs(q);
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     setProducts(items);
@@ -35,6 +36,8 @@ const SellerProductsDashboard = () => {
   };
 
   useEffect(() => {
+    localStorage.setItem('lastSeenPendingTime', Date.now().toString());
+    window.dispatchEvent(new Event('pendingSeen'));
     loadProducts();
   }, []);
 
@@ -68,7 +71,6 @@ const SellerProductsDashboard = () => {
   const deleteProduct = async (id) => {
     if (!window.confirm("Delete this product?")) return;
 
-    await deleteDoc(doc(db, "seller_products", id));
     await deleteDoc(doc(db, "products", id));
     loadProducts();
   };
@@ -107,15 +109,15 @@ const SellerProductsDashboard = () => {
       {/* HEADER */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-white">Products Overview</h1>
-          <p className="text-gray-400">View and manage all products</p>
+          <h1 className="text-3xl font-bold text-white">Pending Approvals</h1>
+          <p className="text-gray-400">Review products waiting to go live</p>
         </div>
 
         <button
           onClick={loadProducts}
-          className="px-4 py-2 bg-gray-700 text-white rounded-lg"
+          className="px-4 py-2 bg-gray-700 text-white rounded-lg flex items-center gap-2 hover:bg-gray-600 transition"
         >
-          <RefreshCw size={16} />
+          <RefreshCw size={16} /> Refresh
         </button>
       </div>
 
@@ -152,39 +154,41 @@ const SellerProductsDashboard = () => {
       </div>
 
       {/* PRODUCT TABLE */}
-      <div className="bg-gray-800 rounded-xl p-4">
+      <div className="bg-gray-800 rounded-xl p-4 shadow-xl border border-gray-700">
         <table className="w-full text-white">
-          <thead className="text-gray-400">
+          <thead className="text-gray-400 border-b border-gray-700">
             <tr>
-              <th className="py-3 text-left">Product</th>
-              <th className="py-3 text-left">Category</th>
-              <th className="py-3 text-left">Price</th>
-              <th className="py-3 text-left">Stock</th>
-              <th className="py-3 text-left">Status</th>
-              <th className="py-3 text-left">Actions</th>
+              <th className="py-4 text-left">Product</th>
+              <th className="py-4 text-left">Category</th>
+              <th className="py-4 text-left">Price</th>
+              <th className="py-4 text-left">Status</th>
+              <th className="py-4 text-left">Actions</th>
             </tr>
           </thead>
 
           <tbody>
             {loading ? (
               <tr>
-              <td colSpan="6" className="text-center py-8">Loading...</td>
+              <td colSpan="5" className="text-center py-10">Loading...</td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan="6" className="text-center py-8 text-gray-400">
-                  No products found
+                <td colSpan="5" className="text-center py-10 text-gray-400">
+                  <div className="flex flex-col items-center gap-2">
+                    <Check size={40} className="text-green-500/50" />
+                    <p>No products waiting for approval. You're all caught up!</p>
+                  </div>
                 </td>
               </tr>
             ) : (
               items.map((p) => (
                 <tr
                   key={p.id}
-                  className="border-b border-gray-700 hover:bg-gray-700/40"
+                  className="border-b border-gray-700/50 hover:bg-gray-700/40 transition-colors"
                 >
                   <td className="py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gray-600 rounded-lg overflow-hidden">
+                      <div className="w-12 h-12 bg-gray-600 rounded-lg overflow-hidden shadow-sm">
                         {p.images?.length ? (
                           <img
                             src={p.images[0]?.url || p.images[0]}
@@ -196,72 +200,44 @@ const SellerProductsDashboard = () => {
                         )}
                       </div>
                       <div>
-                        <div className="font-semibold">{p.name}</div>
-                        <div className="text-gray-400 text-sm">
-                          Seller: {p.sellerid}
+                        <div className="font-semibold text-gray-100">{p.name}</div>
+                        <div className="text-gray-400 text-xs mt-1">
+                          Seller: {p.sellerid || "Unknown"}
                         </div>
                       </div>
                     </div>
                   </td>
 
-                  <td>{p.category}</td>
-                  <td>₹{p.price}</td>
+                  <td className="text-gray-300">{p.category}</td>
+                  <td className="text-gray-300 font-medium">₹{p.price}</td>
 
                   <td>
-                    <span
-                      className={`px-2 py-1 rounded-lg text-sm ${
-                        p.stock === 0
-                          ? "bg-red-600/30 text-red-400"
-                          : p.stock <= 10
-                          ? "bg-yellow-600/30 text-yellow-400"
-                          : "bg-green-600/30 text-green-400"
-                      }`}
-                    >
-                      {p.stock} units
+                    <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      Pending
                     </span>
                   </td>
 
                   <td>
-                    <span
-                      className={`px-2 py-1 rounded-lg text-xs font-bold uppercase ${
-                        p.status === 'pending' ? 'bg-amber-100 text-amber-600' : p.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'
-                      }`}
-                    >
-                      {p.status || 'approved'}
-                    </span>
-                  </td>
-
-                  <td>
-                    <div className="flex gap-3">
-                      {p.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => approveProduct(p.id)}
-                            className="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded text-xs font-bold uppercase"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => rejectProduct(p.id)}
-                            className="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded text-xs font-bold uppercase"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => approveProduct(p.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 border border-emerald-600/30 rounded-lg text-xs font-bold uppercase transition"
+                      >
+                        <Check size={14} /> Approve
+                      </button>
+                      <button
+                        onClick={() => rejectProduct(p.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-600/20 text-rose-400 hover:bg-rose-600/40 border border-rose-600/30 rounded-lg text-xs font-bold uppercase transition"
+                      >
+                        <X size={14} /> Reject
+                      </button>
                       
                       <button
                         onClick={() => openView(p)}
-                        className="text-green-400 hover:text-green-300"
+                        className="p-1.5 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-400/10 rounded-lg transition ml-2"
+                        title="View Details"
                       >
                         <Eye size={18} />
-                      </button>
-
-                      <button
-                        onClick={() => deleteProduct(p.id)}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        <Trash2 size={18} />
                       </button>
                     </div>
                   </td>
@@ -273,23 +249,23 @@ const SellerProductsDashboard = () => {
 
         {/* PAGINATION */}
         {totalPages > 1 && (
-          <div className="flex justify-between items-center mt-4">
+          <div className="flex justify-between items-center mt-6">
             <button
               disabled={page === 1}
               onClick={() => setPage(page - 1)}
-              className="px-3 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-30"
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-30 hover:bg-gray-600 transition"
             >
               Previous
             </button>
 
-            <div className="text-gray-400">
-              Page {page} of {totalPages}
+            <div className="text-gray-400 text-sm">
+              Page <span className="text-white font-medium">{page}</span> of <span className="text-white font-medium">{totalPages}</span>
             </div>
 
             <button
               disabled={page === totalPages}
               onClick={() => setPage(page + 1)}
-              className="px-3 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-30"
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-30 hover:bg-gray-600 transition"
             >
               Next
             </button>
@@ -299,27 +275,29 @@ const SellerProductsDashboard = () => {
 
       {/* VIEW PRODUCT MODAL */}
       {isViewOpen && viewProduct && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-900 w-full max-w-3xl rounded-xl p-6 relative text-white overflow-y-auto max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 w-full max-w-3xl rounded-2xl p-6 relative text-white overflow-y-auto max-h-[90vh] shadow-2xl border border-gray-700">
 
             <button
-              className="absolute top-3 right-3"
+              className="absolute top-4 right-4 p-2 bg-gray-700 hover:bg-gray-600 rounded-full transition"
               onClick={() => setIsViewOpen(false)}
             >
-              ✖
+              <X size={20} />
             </button>
 
-            <h2 className="text-2xl font-bold mb-4">Product Details</h2>
+            <h2 className="text-2xl font-bold mb-6 text-gray-100 flex items-center gap-3">
+              <Package className="text-indigo-400" /> Product Details
+            </h2>
 
             {/* ALL IMAGES */}
             {viewProduct.images?.length > 0 && (
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
                 {viewProduct.images.map((img, idx) => (
                   <img
                     key={idx}
                     src={img?.url || img}
                     alt="Product"
-                    className="w-full h-40 object-cover rounded-lg"
+                    className="w-full h-40 object-cover rounded-xl shadow-md border border-gray-700"
                   />
                 ))}
               </div>
@@ -408,12 +386,26 @@ const SellerProductsDashboard = () => {
               </div>
             </div>
 
-            <button
-              className="mt-5 w-full bg-blue-600 py-2 rounded-lg"
-              onClick={() => setIsViewOpen(false)}
-            >
-              Close
-            </button>
+            <div className="mt-8 flex gap-4">
+              <button
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-900/20"
+                onClick={() => {
+                  approveProduct(viewProduct.id);
+                  setIsViewOpen(false);
+                }}
+              >
+                Approve Product
+              </button>
+              <button
+                className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-rose-900/20"
+                onClick={() => {
+                  rejectProduct(viewProduct.id);
+                  setIsViewOpen(false);
+                }}
+              >
+                Reject Product
+              </button>
+            </div>
 
           </div>
         </div>
@@ -423,4 +415,4 @@ const SellerProductsDashboard = () => {
   );
 };
 
-export default SellerProductsDashboard;
+export default PendingApprovals;

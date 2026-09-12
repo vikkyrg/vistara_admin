@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
+import NotificationListener from "./components/NotificationListener";
 import Dashboard from "./pages/Dashboard";
 import ProductManagement from "./components/Products/ProductManagement";
 import Category from "./pages/Category";
@@ -11,6 +12,7 @@ import SubCategory from "./pages/SubCategory";
 import Brands from "./pages/Brands";
 import Customers from "./pages/Customers";
 import Orders from "./pages/Orders";
+import PendingApprovals from "./pages/PendingApprovals";
 import Sellers from "./pages/Sellers";
 import Coupons from "./pages/Coupons";
 import Posters from "./pages/Posters";
@@ -40,6 +42,7 @@ const App = () => {
           path="/*"
           element={
             <ProtectedRoute>
+              <NotificationListener />
               <div className="flex bg-gray-900 min-h-screen">
                 <Sidebar
                   isOpen={isSidebarOpen}
@@ -59,6 +62,7 @@ const App = () => {
                       <Route path="/brands" element={<Brands />} />
                       <Route path="/customers" element={<Customers />} />
                       <Route path="/orders" element={<Orders />} />
+                      <Route path="/pending-approvals" element={<PendingApprovals />} />
                       <Route path="/sellers" element={<Sellers />} />
                       <Route path="/coupons" element={<Coupons />} />
                       <Route path="/posters" element={<Posters />} />

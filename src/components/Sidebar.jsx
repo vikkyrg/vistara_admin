@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase';
 import {
   LayoutDashboard,
   FolderOpen,
@@ -20,13 +22,42 @@ import {
   ChevronRight,
   Zap,
   RotateCcw,
+  Clock
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
+  const [unreadPending, setUnreadPending] = useState(0);
+
+  useEffect(() => {
+    const q = query(collection(db, "products"), where("status", "==", "pending"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const lastSeenTime = parseInt(localStorage.getItem('lastSeenPendingTime') || '0');
+      let unreadCount = 0;
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.createdAt && typeof data.createdAt.toMillis === 'function') {
+          if (data.createdAt.toMillis() > lastSeenTime) unreadCount++;
+        } else if (lastSeenTime === 0) {
+          unreadCount++;
+        }
+      });
+      setUnreadPending(unreadCount);
+    });
+
+    const handleSeen = () => setUnreadPending(0);
+    window.addEventListener('pendingSeen', handleSeen);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('pendingSeen', handleSeen);
+    };
+  }, []);
+
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: 'Dashboard', },
     { path: '/orders', icon: ShoppingCart, label: 'Orders', },
     { path: '/customers', icon: UserCheck, label: 'Customers',  },
+    { path: '/pending-approvals', icon: Clock, label: 'Pending Approvals', notification: unreadPending > 0 ? unreadPending : null },
     { path: '/products', icon: FolderOpen, label: 'Products',  },
     { path: '/category', icon: Layers, label: 'Category' },
     { path: '/sub-category', icon: Layers, label: 'Sub Category' },
@@ -40,6 +71,8 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/returns', icon: RotateCcw, label: 'Returns & Refunds' },
     { path: '/profile', icon: User, label: 'Profile' },
   ];
+
+
 
   return (
     <>
@@ -122,7 +155,13 @@ const Sidebar = ({ isOpen, onClose }) => {
                 <li key={item.path}>
                   <NavLink
                     to={item.path}
-                    onClick={() => window.innerWidth < 1024 && onClose()}
+                    onClick={() => {
+                      if (window.innerWidth < 1024) onClose();
+                      if (item.path === '/pending-approvals') {
+                        localStorage.setItem('lastSeenPendingTime', Date.now().toString());
+                        window.dispatchEvent(new Event('pendingSeen'));
+                      }
+                    }}
                     className={({ isActive }) =>
                       `group flex items-center justify-between px-3 py-3 rounded-xl transition-all duration-300 relative overflow-hidden ${
                         isActive
