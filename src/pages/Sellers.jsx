@@ -1281,19 +1281,13 @@ const Sellers = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs sm:text-sm">
-                  {/* Mobile OTP Status */}
+                  {/* Mobile Contact */}
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
-                    <span className="text-gray-400 block text-xs uppercase font-bold tracking-wider">Mobile OTP Status</span>
-                    {selectedSeller.phoneVerified ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full font-bold">
-                        <CheckCircle size={14} /> Verified OTP
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full font-bold">
-                        <AlertCircle size={14} /> Unverified
-                      </span>
-                    )}
-                    <p className="text-[11px] text-gray-400 mt-1">Phone: {selectedSeller.phone || 'N/A'}</p>
+                    <span className="text-gray-400 block text-xs uppercase font-bold tracking-wider">Mobile Contact</span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full font-bold">
+                      <CheckCircle size={14} /> Registered Phone
+                    </span>
+                    <p className="text-[11px] text-gray-300 font-mono mt-1">+91 {selectedSeller.phone || 'N/A'}</p>
                   </div>
 
                   {/* PAN Details & Status */}
