@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 import {
   collection, getDocs, doc, updateDoc, getDoc,
-  query, where
+  query, where, arrayUnion
 } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import {
@@ -171,7 +171,7 @@ const Sellers = () => {
         approved: data.filter(s => s.status === "approved").length,
         pending: data.filter(s => s.status === "pending").length,
         blocked: data.filter(s => s.status === "blocked").length,
-        revenue: 0 // You might want to calculate this
+        revenue: 0
       };
       setSellerStats(stats);
     } catch (err) {
@@ -208,7 +208,17 @@ const Sellers = () => {
     if (window.confirm("Are you sure you want to block this seller?")) {
       try {
         const sellerRef = doc(db, 'sellers', sellerId);
-        await updateDoc(sellerRef, { status: 'blocked' });
+        const auditLog = {
+          action: "blocked",
+          performedBy: auth.currentUser?.email || "Admin",
+          timestamp: new Date().toISOString(),
+          notes: "Seller account blocked by Admin"
+        };
+
+        await updateDoc(sellerRef, {
+          status: 'blocked',
+          kycAuditTrail: arrayUnion(auditLog)
+        });
 
         setSellers(prevSellers =>
           prevSellers.map(seller =>
@@ -218,7 +228,7 @@ const Sellers = () => {
           )
         );
 
-        fetchSellers(); // Refresh stats
+        fetchSellers();
       } catch (error) {
         console.error('Error blocking seller:', error);
         alert('Failed to block seller. Please try again.');
@@ -227,7 +237,7 @@ const Sellers = () => {
   };
 
   const handleApproveSeller = async (sellerId) => {
-    if (window.confirm("Are you sure you want to approve this seller?")) {
+    if (window.confirm("Are you sure you want to approve this seller account & KYC?")) {
       try {
         const sellerRef = doc(db, 'sellers', sellerId);
         
@@ -259,37 +269,121 @@ const Sellers = () => {
             });
 
             const result = await srRes.json();
-
             if (!srRes.ok) {
               console.error("Shiprocket Failed:", result);
               toast.error("Seller approved, but pickup location couldn’t be created. Please check that the seller’s address and PIN code are correct.", { duration: 6000 });
-              // Proceed with approval process even if Shiprocket fails
-            } else {
-              console.log("Pickup location successfully added to Shiprocket", result);
             }
           } catch (srError) {
             console.error("Error communicating with backend for Shiprocket:", srError);
-            alert("Network error while communicating with backend.");
-            return;
           }
         }
-        // --- END ADD PICKUP LOCATION ---
 
-        await updateDoc(sellerRef, { status: 'approved' });
+        const auditLog = {
+          action: "approved",
+          performedBy: auth.currentUser?.email || "Admin",
+          timestamp: new Date().toISOString(),
+          notes: "Seller account & KYC approved by Admin"
+        };
+
+        await updateDoc(sellerRef, {
+          status: 'approved',
+          kycStatus: 'approved',
+          kycApprovedAt: new Date().toISOString(),
+          kycApprovedBy: auth.currentUser?.email || "Admin",
+          kycAuditTrail: arrayUnion(auditLog)
+        });
 
         setSellers(prevSellers =>
           prevSellers.map(seller =>
             seller.id === sellerId
-              ? { ...seller, status: 'approved' }
+              ? { ...seller, status: 'approved', kycStatus: 'approved' }
               : seller
           )
         );
 
-        fetchSellers(); // Refresh stats
+        toast.success("Seller account approved successfully!");
+        fetchSellers();
       } catch (error) {
         console.error('Error approving seller:', error);
         alert('Failed to approve seller. Please try again.');
       }
+    }
+  };
+
+  const handleRejectSeller = async (sellerId) => {
+    const reason = prompt("Please enter the rejection reason for this seller application:");
+    if (!reason) return;
+
+    try {
+      const sellerRef = doc(db, 'sellers', sellerId);
+      const auditLog = {
+        action: "rejected",
+        performedBy: auth.currentUser?.email || "Admin",
+        timestamp: new Date().toISOString(),
+        rejectionReason: reason
+      };
+
+      await updateDoc(sellerRef, {
+        status: 'rejected',
+        kycStatus: 'rejected',
+        rejectionReason: reason,
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: auth.currentUser?.email || "Admin",
+        kycAuditTrail: arrayUnion(auditLog)
+      });
+
+      setSellers(prevSellers =>
+        prevSellers.map(seller =>
+          seller.id === sellerId
+            ? { ...seller, status: 'rejected', kycStatus: 'rejected', rejectionReason: reason }
+            : seller
+        )
+      );
+
+      toast.success("Seller application rejected.");
+      fetchSellers();
+    } catch (error) {
+      console.error('Error rejecting seller:', error);
+      alert('Failed to reject seller. Please try again.');
+    }
+  };
+
+  const handleVerifyPanStatus = async (sellerId, newStatus) => {
+    try {
+      const sellerRef = doc(db, 'sellers', sellerId);
+      const auditLog = {
+        action: `pan_${newStatus}`,
+        performedBy: auth.currentUser?.email || "Admin",
+        timestamp: new Date().toISOString(),
+        notes: `PAN verification status set to ${newStatus}`
+      };
+
+      await updateDoc(sellerRef, {
+        panVerificationStatus: newStatus,
+        panVerifiedAt: new Date().toISOString(),
+        panVerifiedBy: auth.currentUser?.email || "Admin",
+        kycAuditTrail: arrayUnion(auditLog)
+      });
+
+      const docRef = doc(db, "sellerDocuments", sellerId);
+      await updateDoc(docRef, {
+        panVerificationStatus: newStatus,
+        panVerifiedAt: new Date().toISOString(),
+        panVerifiedBy: auth.currentUser?.email || "Admin"
+      }).catch(() => {});
+
+      setSelectedSeller(prev => prev ? ({
+        ...prev,
+        panVerificationStatus: newStatus,
+        panVerifiedAt: new Date().toISOString(),
+        panVerifiedBy: auth.currentUser?.email || "Admin"
+      }) : null);
+
+      toast.success(`PAN status set to ${newStatus}`);
+      fetchSellers();
+    } catch (error) {
+      console.error("Error updating PAN status:", error);
+      toast.error("Failed to update PAN status");
     }
   };
 
@@ -1173,6 +1267,109 @@ const Sellers = () => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* LEGAL, PAN & VERIFICATION AUDIT TRAIL */}
+              <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 sm:p-6 rounded-2xl border border-indigo-800 shadow-xl space-y-6">
+                <div className="flex justify-between items-center border-b border-indigo-800/60 pb-3">
+                  <h3 className="text-base sm:text-lg font-bold flex items-center gap-2 text-indigo-300">
+                    <ShieldCheck className="text-emerald-400" /> Legal Compliance, PAN & Verification Audit Trail
+                  </h3>
+                  <span className="text-xs bg-indigo-900/60 text-indigo-200 border border-indigo-700 px-3 py-1 rounded-full font-mono">
+                    Phase-1 Compliant
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs sm:text-sm">
+                  {/* Mobile OTP Status */}
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
+                    <span className="text-gray-400 block text-xs uppercase font-bold tracking-wider">Mobile OTP Status</span>
+                    {selectedSeller.phoneVerified ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full font-bold">
+                        <CheckCircle size={14} /> Verified OTP
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full font-bold">
+                        <AlertCircle size={14} /> Unverified
+                      </span>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-1">Phone: {selectedSeller.phone || 'N/A'}</p>
+                  </div>
+
+                  {/* PAN Details & Status */}
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
+                    <span className="text-gray-400 block text-xs uppercase font-bold tracking-wider">PAN Details</span>
+                    <p className="font-mono font-bold text-white text-base">{selectedSeller.panNumber || selectedSeller.gst || 'N/A'}</p>
+                    <p className="text-xs text-indigo-200 font-medium truncate">Name: {selectedSeller.panName || `${selectedSeller.firstName || ''} ${selectedSeller.lastName || ''}` || 'N/A'}</p>
+                    <div className="pt-1 flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => handleVerifyPanStatus(selectedSeller.id, 'verified')}
+                        className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-[10px] uppercase font-bold rounded transition"
+                      >
+                        Verify PAN
+                      </button>
+                      <button
+                        onClick={() => handleVerifyPanStatus(selectedSeller.id, 'rejected')}
+                        className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-[10px] uppercase font-bold rounded transition"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => handleVerifyPanStatus(selectedSeller.id, 'exempt')}
+                        className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-[10px] uppercase font-bold rounded transition"
+                      >
+                        Exempt
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Seller Agreement Acceptance */}
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-1.5">
+                    <span className="text-gray-400 block text-xs uppercase font-bold tracking-wider">Seller Agreement</span>
+                    {selectedSeller.agreementAccepted ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-xs font-bold">
+                        <CheckCircle size={12} /> Accepted ({selectedSeller.agreementVersion || "v1.0"})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded text-xs font-bold">
+                        Pending
+                      </span>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-1">ID: {selectedSeller.sellerId || selectedSeller.id}</p>
+                  </div>
+
+                  {/* Seller Legal Declaration */}
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-1.5">
+                    <span className="text-gray-400 block text-xs uppercase font-bold tracking-wider">Legal Declaration</span>
+                    {selectedSeller.sellerDeclarationAccepted ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-xs font-bold">
+                        <CheckCircle size={12} /> Confirmed ({selectedSeller.sellerDeclarationVersion || "v1.0"})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded text-xs font-bold">
+                        Pending
+                      </span>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-1">Authenticity & Authority Agreed</p>
+                  </div>
+                </div>
+
+                {/* KYC Audit Trail Log List */}
+                {Array.isArray(selectedSeller.kycAuditTrail) && selectedSeller.kycAuditTrail.length > 0 && (
+                  <div className="pt-3 border-t border-indigo-800/60">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-2">Audit Trail Log</h4>
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                      {selectedSeller.kycAuditTrail.map((log, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-white/5 p-2 rounded border border-white/5 text-[11px]">
+                          <span className="font-bold text-emerald-300 uppercase">{log.action}</span>
+                          <span className="text-gray-300">By: {log.performedBy || "Admin"}</span>
+                          <span className="text-gray-400">{log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}</span>
+                          {log.rejectionReason && <span className="text-rose-300 font-medium">Reason: {log.rejectionReason}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* DOCUMENTS SECTION */}
