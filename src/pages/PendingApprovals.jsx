@@ -11,6 +11,7 @@ const PendingApprovals = () => {
   const [products, setProducts] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sellersMap, setSellersMap] = useState({});
 
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("name");
@@ -19,12 +20,50 @@ const PendingApprovals = () => {
   const [viewProduct, setViewProduct] = useState(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
+  const [approvePopupId, setApprovePopupId] = useState(null);
+  const [commissionYesNo, setCommissionYesNo] = useState(null);
+  const [commissionPercent, setCommissionPercent] = useState("");
+
   const [page, setPage] = useState(1);
   const itemsPerPage = 10;
 
   // Load PENDING products
   const loadProducts = async () => {
     setLoading(true);
+
+    try {
+      const sellersData = {};
+
+      // 1. Fetch Sellers
+      const sellersSnap = await getDocs(collection(db, "sellers"));
+      sellersSnap.docs.forEach(d => {
+        const s = d.data();
+        let name = s.fullName || `${s.firstName || ''} ${s.lastName || ''}`.trim();
+        if (!name) name = s.businessName;
+        else if (s.businessName && s.businessName !== name) name = `${name} (${s.businessName})`;
+        
+        if (name) {
+          sellersData[d.id] = name;
+          if (s.email) sellersData[s.email] = name;
+          if (s.sellerId) sellersData[s.sellerId] = name;
+        }
+      });
+
+      // 2. Fetch Users
+      const usersSnap = await getDocs(collection(db, "users"));
+      usersSnap.docs.forEach(d => {
+        const u = d.data();
+        let name = u.userName || `${u.firstName || ''} ${u.lastName || ''}`.trim();
+        if (name) {
+          if (!sellersData[d.id]) sellersData[d.id] = name;
+          if (u.email && !sellersData[u.email]) sellersData[u.email] = name;
+        }
+      });
+
+      setSellersMap(sellersData);
+    } catch (e) {
+      console.error("Error fetching sellers/users:", e);
+    }
 
     const q = query(collection(db, "products"), where("status", "==", "pending"));
     const snap = await getDocs(q);
@@ -76,12 +115,53 @@ const PendingApprovals = () => {
   };
 
   // Approve product
-  const approveProduct = async (id) => {
-    if (!window.confirm("Approve this product?")) return;
+  const approveProduct = (id) => {
+    const p = products.find(prod => prod.id === id) || (viewProduct?.id === id ? viewProduct : null);
+    if(p) setApprovePopupId(p);
+  };
 
-    await updateDoc(doc(db, "products", id), {
-      status: "approved"
-    });
+  const handleFinalApprove = async () => {
+    if (!approvePopupId) return;
+    const p = approvePopupId;
+    let newPrice = Number(p.price);
+    let newSalePrice = p.salePrice ? Number(p.salePrice) : Number(p.price);
+
+    let updates = { status: "approved" };
+
+    if (commissionYesNo === "yes" && commissionPercent) {
+      const percent = Number(commissionPercent);
+      if (!isNaN(percent) && percent > 0) {
+        newPrice = newPrice + (newPrice * percent / 100);
+        newSalePrice = newSalePrice + (newSalePrice * percent / 100);
+        
+        updates = {
+          ...updates,
+          adminCommissionPercentage: percent,
+          sellerPrice: Number(p.price),
+          sellerSalePrice: p.salePrice ? Number(p.salePrice) : Number(p.price),
+          price: newPrice,
+          salePrice: newSalePrice,
+        };
+        
+        if (p.variants && p.variants.length > 0) {
+          updates.variants = p.variants.map(v => {
+             let vPrice = Number(v.price);
+             let vNewPrice = vPrice + (vPrice * percent / 100);
+             return {
+               ...v,
+               sellerPrice: vPrice,
+               price: vNewPrice
+             };
+          });
+        }
+      }
+    }
+
+    await updateDoc(doc(db, "products", p.id), updates);
+    setApprovePopupId(null);
+    setCommissionYesNo(null);
+    setCommissionPercent("");
+    setIsViewOpen(false);
     loadProducts();
   };
 
@@ -202,7 +282,7 @@ const PendingApprovals = () => {
                       <div>
                         <div className="font-semibold text-gray-100">{p.name}</div>
                         <div className="text-gray-400 text-xs mt-1">
-                          Seller: {p.sellerid || "Unknown"}
+                          Seller: {sellersMap[p.sellerId] || sellersMap[p.sellerid] || sellersMap[p.sellerEmail] || p.sellerEmail || p.sellerId || p.sellerid || "Unknown"}
                         </div>
                       </div>
                     </div>
@@ -407,6 +487,64 @@ const PendingApprovals = () => {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* COMMISSION POPUP */}
+      {approvePopupId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 w-full max-w-md rounded-2xl p-6 relative text-white shadow-2xl border border-gray-700">
+            <button
+              className="absolute top-4 right-4 p-2 bg-gray-700 hover:bg-gray-600 rounded-full transition"
+              onClick={() => {
+                setApprovePopupId(null);
+                setCommissionYesNo(null);
+                setCommissionPercent("");
+              }}
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold mb-4">Approve Product</h2>
+            <p className="mb-4">Do you want to add a commission/percentage to this product?</p>
+            <div className="flex gap-4 mb-4">
+              <button
+                className={`px-4 py-2 rounded-lg font-bold transition ${commissionYesNo === 'yes' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                onClick={() => setCommissionYesNo('yes')}
+              >
+                Yes
+              </button>
+              <button
+                className={`px-4 py-2 rounded-lg font-bold transition ${commissionYesNo === 'no' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                onClick={() => {
+                  setCommissionYesNo('no');
+                  setCommissionPercent("");
+                }}
+              >
+                No
+              </button>
+            </div>
+            
+            {commissionYesNo === 'yes' && (
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-400 mb-2">Commission Percentage (%)</label>
+                <input
+                  type="number"
+                  value={commissionPercent}
+                  onChange={(e) => setCommissionPercent(e.target.value)}
+                  placeholder="e.g. 3"
+                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            )}
+
+            <button
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition mt-4 disabled:opacity-50"
+              onClick={handleFinalApprove}
+              disabled={commissionYesNo === null || (commissionYesNo === 'yes' && !commissionPercent)}
+            >
+              Confirm Approval
+            </button>
           </div>
         </div>
       )}

@@ -11,6 +11,7 @@ const SellerProductsDashboard = () => {
   const [products, setProducts] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sellersMap, setSellersMap] = useState({});
 
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("name");
@@ -25,6 +26,38 @@ const SellerProductsDashboard = () => {
   // Load ALL products
   const loadProducts = async () => {
     setLoading(true);
+
+    try {
+      const sellersData = {};
+
+      const sellersSnap = await getDocs(collection(db, "sellers"));
+      sellersSnap.docs.forEach(d => {
+        const s = d.data();
+        let name = s.fullName || `${s.firstName || ''} ${s.lastName || ''}`.trim();
+        if (!name) name = s.businessName;
+        else if (s.businessName && s.businessName !== name) name = `${name} (${s.businessName})`;
+        
+        if (name) {
+          sellersData[d.id] = name;
+          if (s.email) sellersData[s.email] = name;
+          if (s.sellerId) sellersData[s.sellerId] = name;
+        }
+      });
+
+      const usersSnap = await getDocs(collection(db, "users"));
+      usersSnap.docs.forEach(d => {
+        const u = d.data();
+        let name = u.userName || `${u.firstName || ''} ${u.lastName || ''}`.trim();
+        if (name) {
+          if (!sellersData[d.id]) sellersData[d.id] = name;
+          if (u.email && !sellersData[u.email]) sellersData[u.email] = name;
+        }
+      });
+
+      setSellersMap(sellersData);
+    } catch (e) {
+      console.error("Error loading sellers map:", e);
+    }
 
     const snap = await getDocs(collection(db, "products"));
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -198,7 +231,7 @@ const SellerProductsDashboard = () => {
                       <div>
                         <div className="font-semibold">{p.name}</div>
                         <div className="text-gray-400 text-sm">
-                          Seller: {p.sellerid}
+                          Seller: {sellersMap[p.sellerId] || sellersMap[p.sellerid] || sellersMap[p.sellerEmail] || p.sellerEmail || p.sellerId || p.sellerid || "Unknown"}
                         </div>
                       </div>
                     </div>
