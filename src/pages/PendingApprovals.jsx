@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 
 import { db } from "../../firebase";
-import { collection, getDocs, query, where, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 
 const PendingApprovals = () => {
   const [products, setProducts] = useState([]);
@@ -114,53 +114,68 @@ const PendingApprovals = () => {
     loadProducts();
   };
 
-  // Approve product
-  const approveProduct = (id) => {
+  // Approve product with stored global commission
+  const approveProduct = async (id) => {
     const p = products.find(prod => prod.id === id) || (viewProduct?.id === id ? viewProduct : null);
-    if(p) setApprovePopupId(p);
+    if (!p) return;
+
+    // Fetch global commission setting
+    let commPercent = 0;
+    try {
+      const commSnap = await getDoc(doc(db, "settings", "commission"));
+      if (commSnap.exists()) {
+        commPercent = Number(commSnap.data().percentage || 0);
+      }
+    } catch (e) {
+      console.error("Error fetching global commission:", e);
+    }
+
+    setApprovePopupId({
+      product: p,
+      commPercent: commPercent
+    });
   };
 
   const handleFinalApprove = async () => {
-    if (!approvePopupId) return;
-    const p = approvePopupId;
-    let newPrice = Number(p.price);
-    let newSalePrice = p.salePrice ? Number(p.salePrice) : Number(p.price);
+    if (!approvePopupId || !approvePopupId.product) return;
+    const p = approvePopupId.product;
+    const percent = approvePopupId.commPercent || 0;
 
-    let updates = { status: "approved" };
+    let basePrice = Number(p.sellerPrice || p.price || 0);
+    let baseSalePrice = p.sellerSalePrice ? Number(p.sellerSalePrice) : (p.salePrice ? Number(p.salePrice) : basePrice);
 
-    if (commissionYesNo === "yes" && commissionPercent) {
-      const percent = Number(commissionPercent);
-      if (!isNaN(percent) && percent > 0) {
-        newPrice = newPrice + (newPrice * percent / 100);
-        newSalePrice = newSalePrice + (newSalePrice * percent / 100);
-        
-        updates = {
-          ...updates,
-          adminCommissionPercentage: percent,
-          sellerPrice: Number(p.price),
-          sellerSalePrice: p.salePrice ? Number(p.salePrice) : Number(p.price),
-          price: newPrice,
-          salePrice: newSalePrice,
+    let finalPrice = basePrice + (basePrice * percent / 100);
+    let finalSalePrice = baseSalePrice + (baseSalePrice * percent / 100);
+
+    let updates = {
+      status: "approved",
+      approved: true,
+      adminCommissionPercentage: percent,
+      sellerPrice: basePrice,
+      sellerSalePrice: baseSalePrice,
+      price: finalPrice,
+      salePrice: finalSalePrice,
+    };
+
+    if (p.variants && p.variants.length > 0) {
+      updates.variants = p.variants.map(v => {
+        let vBasePrice = Number(v.sellerPrice || v.price || 0);
+        let vFinalPrice = vBasePrice + (vBasePrice * percent / 100);
+        let vBaseSalePrice = v.sellerSalePrice ? Number(v.sellerSalePrice) : (v.salePrice ? Number(v.salePrice) : vBasePrice);
+        let vFinalSalePrice = vBaseSalePrice + (vBaseSalePrice * percent / 100);
+
+        return {
+          ...v,
+          sellerPrice: vBasePrice,
+          sellerSalePrice: vBaseSalePrice,
+          price: vFinalPrice,
+          salePrice: vFinalSalePrice
         };
-        
-        if (p.variants && p.variants.length > 0) {
-          updates.variants = p.variants.map(v => {
-             let vPrice = Number(v.price);
-             let vNewPrice = vPrice + (vPrice * percent / 100);
-             return {
-               ...v,
-               sellerPrice: vPrice,
-               price: vNewPrice
-             };
-          });
-        }
-      }
+      });
     }
 
     await updateDoc(doc(db, "products", p.id), updates);
     setApprovePopupId(null);
-    setCommissionYesNo(null);
-    setCommissionPercent("");
     setIsViewOpen(false);
     loadProducts();
   };
@@ -491,60 +506,54 @@ const PendingApprovals = () => {
         </div>
       )}
 
-      {/* COMMISSION POPUP */}
-      {approvePopupId && (
+      {/* APPROVAL CONFIRMATION POPUP WITH BREAKDOWN */}
+      {approvePopupId && approvePopupId.product && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 w-full max-w-md rounded-2xl p-6 relative text-white shadow-2xl border border-gray-700">
             <button
               className="absolute top-4 right-4 p-2 bg-gray-700 hover:bg-gray-600 rounded-full transition"
-              onClick={() => {
-                setApprovePopupId(null);
-                setCommissionYesNo(null);
-                setCommissionPercent("");
-              }}
+              onClick={() => setApprovePopupId(null)}
             >
               <X size={20} />
             </button>
-            <h2 className="text-xl font-bold mb-4">Approve Product</h2>
-            <p className="mb-4">Do you want to add a commission/percentage to this product?</p>
-            <div className="flex gap-4 mb-4">
+
+            <h2 className="text-xl font-bold mb-2 flex items-center gap-2 text-emerald-400">
+              <Check size={22} /> Confirm Approval
+            </h2>
+            <p className="text-gray-300 text-sm mb-5">
+              Approving <strong className="text-white">{approvePopupId.product.name}</strong> using global commission rate of <strong className="text-indigo-400">{approvePopupId.commPercent}%</strong>.
+            </p>
+
+            {/* BREAKDOWN BOX */}
+            <div className="bg-gray-900/80 p-4 rounded-xl border border-gray-700 space-y-3 mb-6 text-sm">
+              <div className="flex justify-between items-center text-gray-400">
+                <span>Seller Cost:</span>
+                <span className="font-bold text-white">₹{Number(approvePopupId.product.sellerPrice || approvePopupId.product.price || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center text-indigo-400">
+                <span>Admin Commission ({approvePopupId.commPercent}%):</span>
+                <span className="font-bold">+₹{((Number(approvePopupId.product.sellerPrice || approvePopupId.product.price || 0) * approvePopupId.commPercent) / 100).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-700 flex justify-between items-center font-bold">
+                <span className="text-emerald-400">Website & Admin Price:</span>
+                <span className="text-emerald-400 text-lg">₹{(Number(approvePopupId.product.sellerPrice || approvePopupId.product.price || 0) * (1 + approvePopupId.commPercent / 100)).toLocaleString("en-IN")}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
               <button
-                className={`px-4 py-2 rounded-lg font-bold transition ${commissionYesNo === 'yes' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-                onClick={() => setCommissionYesNo('yes')}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-3 rounded-xl transition text-sm"
+                onClick={() => setApprovePopupId(null)}
               >
-                Yes
+                Cancel
               </button>
               <button
-                className={`px-4 py-2 rounded-lg font-bold transition ${commissionYesNo === 'no' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-                onClick={() => {
-                  setCommissionYesNo('no');
-                  setCommissionPercent("");
-                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-900/30 text-sm flex items-center justify-center gap-1.5"
+                onClick={handleFinalApprove}
               >
-                No
+                <Check size={18} /> Confirm & Approve
               </button>
             </div>
-            
-            {commissionYesNo === 'yes' && (
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-400 mb-2">Commission Percentage (%)</label>
-                <input
-                  type="number"
-                  value={commissionPercent}
-                  onChange={(e) => setCommissionPercent(e.target.value)}
-                  placeholder="e.g. 3"
-                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            )}
-
-            <button
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition mt-4 disabled:opacity-50"
-              onClick={handleFinalApprove}
-              disabled={commissionYesNo === null || (commissionYesNo === 'yes' && !commissionPercent)}
-            >
-              Confirm Approval
-            </button>
           </div>
         </div>
       )}

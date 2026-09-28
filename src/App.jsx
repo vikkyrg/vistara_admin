@@ -21,6 +21,7 @@ import JsonBulkUpload from "./pages/JsonUploadPage";
 import AdminLogin from "./pages/Login";
 import Profile from "./pages/Profile";
 import Returns from "./pages/Returns";
+import Commission from "./pages/Commission";
 // ✅ Protected Route
 const ProtectedRoute = ({ children }) => {
   const isAuth = localStorage.getItem("adminAuth") === "true";
@@ -63,6 +64,7 @@ const App = () => {
                       <Route path="/customers" element={<Customers />} />
                       <Route path="/orders" element={<Orders />} />
                       <Route path="/pending-approvals" element={<PendingApprovals />} />
+                      <Route path="/commission" element={<Commission />} />
                       <Route path="/sellers" element={<Sellers />} />
                       <Route path="/coupons" element={<Coupons />} />
                       <Route path="/posters" element={<Posters />} />

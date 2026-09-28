@@ -22,7 +22,8 @@ import {
   ChevronRight,
   Zap,
   RotateCcw,
-  Clock
+  Clock,
+  Percent
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -58,6 +59,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/orders', icon: ShoppingCart, label: 'Orders', },
     { path: '/customers', icon: UserCheck, label: 'Customers',  },
     { path: '/pending-approvals', icon: Clock, label: 'Pending Approvals', notification: unreadPending > 0 ? unreadPending : null },
+    { path: '/commission', icon: Percent, label: 'Commission' },
     { path: '/products', icon: FolderOpen, label: 'Products',  },
     { path: '/category', icon: Layers, label: 'Category' },
     { path: '/sub-category', icon: Layers, label: 'Sub Category' },
